@@ -1,0 +1,152 @@
+/*
+  Capacitive-Touch Arduino Keyboard Piano with Christmas Light Sequence
+  This version integrates a light sequence triggered when the electromagnet is demagnetized.
+*/
+
+// Include necessary libraries
+#include <CapacitiveSensor.h>
+#include "pitches.h"
+
+unsigned long previousMillis = 0; // Store the last time a measurement was taken
+const long interval = 1000; // Interval at which to perform the measurement (in milliseconds)
+int CODE_LOCK = 0; // Initialize the code lock number
+int CODE = 0;      // Initialize the code number 
+
+// Pin Definitions
+#define FREQUENCY_PIN 12
+#define MAG_PIN 10
+#define COMMON_PIN 2    // The common 'send' pin for all keys
+#define BUZZER_PIN A4   // The output pin for the piezo buzzer
+#define NUM_OF_SAMPLES 10
+#define CAP_THRESHOLD 150
+#define NUM_OF_KEYS 4
+#define LED_PIN 7
+#define POWER_LED_PIN 8
+#define CLED_1 22
+#define CLED_2 23
+#define CLED_3 24
+#define CLED_4 25
+const int numLights = 4;
+// LED pins for the Christmas light sequence
+
+// Note definitions
+int notes[] = {NOTE_C4, NOTE_D4, NOTE_G4, NOTE_A4};
+
+// Key and sequence tracking
+int keyArray[7];
+int correctSequence[] = {0, 0, 2, 2, 3, 3, 2};
+int idx = 0;
+
+// Capacitive sensors for keys
+CapacitiveSensor keys[] = {CapacitiveSensor(2, 3), CapacitiveSensor(2, 4), CapacitiveSensor(2, 5), CapacitiveSensor(2, 6)};
+
+void setup() {
+  Serial.begin(9600);
+
+  // Initialize keys
+  for (int keyNumber = 0; keyNumber < NUM_OF_KEYS; ++keyNumber) {
+    keys[keyNumber].set_CS_AutocaL_Millis(0xFFFFFFFF);
+  }
+
+  // Initialize LEDs for the light sequence
+  for (int i = 0; i < numLights; i++) {
+    pinMode(CLED_1, OUTPUT);
+    pinMode(CLED_2, OUTPUT);
+    pinMode(CLED_3, OUTPUT);
+    pinMode(CLED_4, OUTPUT);
+    digitalWrite(CLED_1, LOW);
+    digitalWrite(CLED_2, LOW);
+    digitalWrite(CLED_3, LOW);
+    digitalWrite(CLED_4, LOW);
+  }
+
+  // Initialize magnet and other outputs
+  pinMode(FREQUENCY_PIN, INPUT);
+  pinMode(MAG_PIN, OUTPUT);
+  digitalWrite(MAG_PIN, HIGH); // Magnet on initially
+
+  // Initialize buzzer and other LEDs
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(POWER_LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
+  digitalWrite(POWER_LED_PIN, HIGH);
+}
+
+void loop() {
+  // Handle capacitive touch keys
+  for (int keyNumber = 0; keyNumber < NUM_OF_KEYS; ++keyNumber) {
+    if (keys[keyNumber].capacitiveSensor(NUM_OF_SAMPLES) > CAP_THRESHOLD) {
+      tone(BUZZER_PIN, notes[keyNumber]);
+      keyArray[idx] = keyNumber;
+      idx++;
+      delay(500);
+      noTone(BUZZER_PIN);
+    }
+
+    if (idx >= 7) {
+      if (checkSequence()) {
+        digitalWrite(LED_PIN, HIGH);
+        digitalWrite(POWER_LED_PIN, LOW);
+        delay(10000);
+        digitalWrite(LED_PIN, LOW);
+        digitalWrite(POWER_LED_PIN, HIGH);
+      }
+      memset(keyArray, 0, sizeof(keyArray));
+      idx = 0;
+    }
+  }
+
+  // Check for electromagnet state
+  int durationHigh = pulseIn(FREQUENCY_PIN, HIGH);
+  int durationLow = pulseIn(FREQUENCY_PIN, LOW);
+  unsigned long period = durationHigh + durationLow;
+  unsigned long currentMillis = millis();
+
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+
+    if (period > 0) {
+      float frequency = 1000000.0 / period;
+      Serial.print(frequency);
+      Serial.println(" Hz");
+
+      if (frequency > 7500 && frequency < 8400) {
+        digitalWrite(MAG_PIN, LOW); // Turn off the magnet
+        tone(BUZZER_PIN, 1000);
+        delay(1000);
+        noTone(BUZZER_PIN);
+        playChristmasSequence(); // Play the light sequence
+      } else {
+        digitalWrite(MAG_PIN, HIGH); // Turn the magnet back on
+      }
+    }
+  }
+}
+
+// Function to play the Christmas light sequence
+void playChristmasSequence() {
+  for (int i = 0; i < 6; i++) { // Repeat the sequence 3 times
+    for (int j = 0; j < numLights; j++) {
+      digitalWrite(CLED_1, HIGH);
+      digitalWrite(CLED_2, HIGH);
+      digitalWrite(CLED_3, HIGH);
+      digitalWrite(CLED_4, HIGH);
+      delay(400);
+      digitalWrite(CLED_1, LOW);
+      digitalWrite(CLED_2, LOW);
+      digitalWrite(CLED_3, LOW);
+      digitalWrite(CLED_4, LOW);
+    }
+  }
+}
+
+// Function to check the sequence entered by the user
+bool checkSequence() {
+  for (int idx = 0; idx < 7; ++idx) {
+    if (keyArray[idx] != correctSequence[idx]) {
+      return false;
+    }
+  }
+  return true;
+}
